@@ -22,13 +22,13 @@ from qwen_tts import Qwen3TTSModel
 
 def main():
     device = "cuda:0"
-    MODEL_PATH = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/"
+    MODEL_PATH = "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice"
 
     tts = Qwen3TTSModel.from_pretrained(
         MODEL_PATH,
         device_map=device,
         dtype=torch.bfloat16,
-        attn_implementation="flash_attention_2",
+        attn_implementation="sdpa",
     )
 
     # -------- Single (with instruct) --------
@@ -51,7 +51,7 @@ def main():
     # -------- Batch (some empty instruct) --------
     texts = ["其实我真的有发现，我是一个特别善于观察别人情绪的人。", "She said she would be here by noon."]
     languages = ["Chinese", "English"]
-    speakers = ["Vivian", "Ryan"]
+    speakers = ["Vivian", "Aiden"]
     instructs = ["", "Very happy."]
 
     torch.cuda.synchronize()
