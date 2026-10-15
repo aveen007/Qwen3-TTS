@@ -465,6 +465,24 @@ Please refer to [Qwen3-TTS-Finetuning](finetuning/) for detailed instructions on
 During evaluation, we ran inference for all models with `dtype=torch.bfloat16` and set `max_new_tokens=2048`. All other sampling parameters used the defaults from the checkpoint’s `generate_config.json`. For the Seed-Test and InstructTTS-Eval test sets, we set `language="auto"`, while for all other test sets we explicitly passed the corresponding `language`. The detailed results are shown below.
 
 
+### Local raw-text-embedding projection experiment
+
+We evaluated `Qwen3-TTS-12Hz-0.6B-CustomVoice` with the `Aiden` speaker on the same 100 MiniMax English prompts for both runs.
+
+| Run | Mean utterance WER | Corpus WER |
+|---|---:|---:|
+| Paper reference | 1.188% | — |
+| Reproduced native baseline | 1.777% | 1.783% |
+| Projected raw text embeddings | 2.075% | 2.107% |
+| Projection minus native baseline | +0.298 pp | +0.324 pp |
+
+Generated audio and its prompt mapping are saved under:
+
+- Native baseline: `eval_outputs/minimax_english_aiden_12hz_0.6b/audio/` and `eval_outputs/minimax_english_aiden_12hz_0.6b/manifest.jsonl`
+- Projected embeddings: `eval_outputs/minimax_english_aiden_12hz_0.6b_projected/audio/` and `eval_outputs/minimax_english_aiden_12hz_0.6b_projected/manifest.jsonl`
+
+Matching filenames, such as `0000.wav`, use the same prompt in both runs and can be compared directly. These evaluation output directories are local artifacts and are not committed to Git. Generation used sampling without a fixed seed, so the reproduced native run is the appropriate control for the projection run.
+
 <details>
 <summary>Speech Generation Benchmarks</summary>
 
