@@ -2202,9 +2202,42 @@ class Qwen3TTSForConditionalGeneration(Qwen3TTSPreTrainedModel, GenerationMixin)
                                                 dim=1)
                 if non_streaming_mode:
                     talker_input_embed = talker_input_embed[:, :-1] # 去掉原本放进去的text
+
+                    ################ PROJECTED RAW TEXT EMBEDDINGS ################
+                    # text_embed = self.talker.get_text_embeddings()(input_id[:, 3:-5])
+                    if not hasattr(self, "_projected_text_embedding_bundle"):
+                        projected_path = os.path.abspath(os.path.join(
+                            os.path.dirname(__file__), "..", "..", "..",
+                            "qwen3_tts_minimax_english_100_projected_raw_text_embeddings.pt",
+                        ))
+                        self._projected_text_embedding_bundle = torch.load(
+                            projected_path, map_location="cpu", weights_only=False
+                        )
+                    projected_bundle = self._projected_text_embedding_bundle
+                    content_ids = input_id[0, 3:-5].detach().cpu().long()
+                    projected_index = next(
+                        i for i in range(len(projected_bundle["row_offsets"]) - 1)
+                        if torch.equal(
+                            projected_bundle["token_ids"][
+                                int(projected_bundle["row_offsets"][i]):
+                                int(projected_bundle["row_offsets"][i + 1])
+                            ].long(),
+                            content_ids,
+                        )
+                    )
+                    projected_start = int(projected_bundle["row_offsets"][projected_index])
+                    projected_end = int(projected_bundle["row_offsets"][projected_index + 1])
+                    text_embed = projected_bundle["embeddings"][
+                        projected_start:projected_end
+                    ].unsqueeze(0).to(
+                        device=self.talker.device,
+                        dtype=self.talker.get_text_embeddings().weight.dtype,
+                    )
+                    ################ PROJECTED RAW TEXT EMBEDDINGS ################
+
                     talker_input_embed = torch.cat([talker_input_embed,
                                                     torch.cat((self.talker.text_projection(
-                                                        self.talker.get_text_embeddings()(input_id[:, 3:-5])
+                                                        text_embed
                                                     ), tts_eos_embed), dim=1) + self.talker.get_input_embeddings()(
                                                         torch.tensor(
                                                             [[
