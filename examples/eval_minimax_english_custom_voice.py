@@ -3,7 +3,7 @@
 
 This reproduces the smallest paper-comparable Qwen3-TTS evaluation:
 Qwen3-TTS-12Hz-0.6B-CustomVoice, Aiden, 100 English MiniMax prompts,
-and Whisper-large-v3 WER.
+and Whisper-large-v3 WER/CER.
 """
 
 import argparse
@@ -23,7 +23,7 @@ os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
 import numpy as np
 import soundfile as sf
 import torch
-from jiwer import process_words
+from jiwer import process_characters, process_words
 from scipy.signal import resample_poly
 from zhon.hanzi import punctuation as chinese_punctuation
 
@@ -273,6 +273,10 @@ def score_audio(
             reference_normalized = normalize_english(str(prompt["text"]))
             hypothesis_normalized = normalize_english(hypothesis)
             measures = process_words(reference_normalized, hypothesis_normalized)
+            character_measures = process_characters(
+                reference_normalized.replace(" ", ""),
+                hypothesis_normalized.replace(" ", ""),
+            )
             row: Dict[str, object] = {
                 **prompt,
                 "audio": str(audio_path(output_dir, index).resolve()),
@@ -284,11 +288,18 @@ def score_audio(
                 "deletions": measures.deletions,
                 "insertions": measures.insertions,
                 "hits": measures.hits,
+                "cer": character_measures.cer,
+                "character_substitutions": character_measures.substitutions,
+                "character_deletions": character_measures.deletions,
+                "character_insertions": character_measures.insertions,
+                "character_hits": character_measures.hits,
             }
             existing[index] = row
             write_jsonl(results_path, [existing[key] for key in sorted(existing)])
             print(
-                f"[{index + 1:03d}/{total:03d}] WER={measures.wer * 100:.3f}% "
+                f"[{index + 1:03d}/{total:03d}] "
+                f"WER={measures.wer * 100:.3f}% "
+                f"CER={character_measures.cer * 100:.3f}% "
                 f"ASR={hypothesis!r}",
                 flush=True,
             )
@@ -311,6 +322,32 @@ def score_audio(
         for row in rows
     )
     corpus_wer = errors / reference_words
+    character_measures = [
+        process_characters(
+            str(row["reference_normalized"]).replace(" ", ""),
+            str(row["hypothesis_normalized"]).replace(" ", ""),
+        )
+        for row in rows
+    ]
+    for row, measures in zip(rows, character_measures):
+        row["cer"] = measures.cer
+        row["character_substitutions"] = measures.substitutions
+        row["character_deletions"] = measures.deletions
+        row["character_insertions"] = measures.insertions
+        row["character_hits"] = measures.hits
+    write_jsonl(results_path, rows)
+    mean_utterance_cer = float(
+        np.mean([measures.cer for measures in character_measures])
+    )
+    character_errors = sum(
+        measures.substitutions + measures.deletions + measures.insertions
+        for measures in character_measures
+    )
+    reference_characters = sum(
+        measures.hits + measures.substitutions + measures.deletions
+        for measures in character_measures
+    )
+    corpus_cer = character_errors / reference_characters
     summary = {
         "samples": len(rows),
         "model": TTS_MODEL_ID,
@@ -318,6 +355,9 @@ def score_audio(
         "asr_model": ASR_MODEL_ID,
         "mean_utterance_wer_percent": round(mean_utterance_wer * 100, 6),
         "corpus_wer_percent": round(corpus_wer * 100, 6),
+        "mean_utterance_cer_percent": round(mean_utterance_cer * 100, 6),
+        "corpus_cer_percent": round(corpus_cer * 100, 6),
+        "cer_ignores_spaces": True,
         "paper_reference_wer_percent": PAPER_WER_PERCENT,
         "delta_from_paper_percentage_points": round(
             mean_utterance_wer * 100 - PAPER_WER_PERCENT, 6
@@ -327,13 +367,18 @@ def score_audio(
         json.dumps(summary, indent=2) + "\n", encoding="utf-8"
     )
 
-    print("\nBaseline result", flush=True)
+    print("\nEvaluation result", flush=True)
     print(f"Samples: {summary['samples']}", flush=True)
     print(
         f"Mean utterance WER: {summary['mean_utterance_wer_percent']:.3f}%",
         flush=True,
     )
     print(f"Corpus WER: {summary['corpus_wer_percent']:.3f}%", flush=True)
+    print(
+        f"Mean utterance CER: {summary['mean_utterance_cer_percent']:.3f}%",
+        flush=True,
+    )
+    print(f"Corpus CER: {summary['corpus_cer_percent']:.3f}%", flush=True)
     print(f"Paper reference: {PAPER_WER_PERCENT:.3f}%", flush=True)
     print(f"Saved: {(output_dir / 'summary.json').resolve()}", flush=True)
 
